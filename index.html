@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.15.1/dist/phaser-arcade-physics.min.js"></script>
+  <title>Jeux platformer</title>
+</head>
+<body>
+  <script type="text/javascript">
+  var config = {
+      type: Phaser.AUTO,
+      // width: 800,
+      // height: 600,
+      // Setting du moteur physique
+      physics: {
+        default: 'arcade',
+        arcade: {
+            // Set de la gratité sur l'axe y
+            gravity: { y: 1000 },
+            debug: false
+          }
+      },
+      scene: {
+          preload: preload,
+          create: create,
+          update: update
+      }
+  };
+  var player;
+  var stars;
+  var platforms;
+  var cursors;
+  var score = 0;
+  var scoreText;
+
+  var game = new Phaser.Game(config);
+
+  function preload ()
+  {
+    // Chargement des assets avec leurs liens
+    // Ils sont chargés, pour être utilisés il faudra les créer
+    this.load.image('sky', 'assets/sky.png');
+    this.load.image('ground', 'assets/platform.png');
+    this.load.image('star', 'assets/star.png');
+    this.load.image('bomb', 'assets/bomb.png');
+    this.load.spritesheet('dude', 'assets/dude.png', { frameWidth: 32, frameHeight: 48 });
+  }
+
+  function create ()
+  {
+    //  Set the camera and physics bounds
+    this.cameras.main.setBounds(0, 0, 800 * 4, 0);
+    this.physics.world.setBounds(0, 0, 800 * 4, 600);
+
+    // Chargement au coordonnée (x, y) de l'image sky
+    // 400 300 car placé par le centre (l'image fait 800x600)
+    // setScale(x,y): multiplie l'image sur x ou y
+    this.add.image(0, 0, 'sky').setOrigin(0).setScale(4,1);
+    // Utilisation de la physique Arcade
+    // Corps statique: possède une pos et une taille, ne peux pas bouger
+    platforms = this.physics.add.staticGroup();
+    // setScale(2) double la taille du png
+    // refreshBody permet de rafraichir l'élément statique, afin d'afficher les modifs
+    // dimension (400x32)
+    platforms.create(1600, 570, 'ground').setScale(8,1).refreshBody();
+    platforms.create(600, 400, 'ground');
+    platforms.create(50, 250, 'ground');
+    platforms.create(750, 220, 'ground');
+    // Création du sprite du personnage
+    player = this.physics.add.sprite(100, 450, 'dude');
+
+    // Set une valeur de rebond
+    // player.setBounce(0.2);
+
+    player.setCollideWorldBounds(true);
+
+    this.cameras.main.startFollow(player, true, 0.05, 0.05);
+
+    // Création d'un animation
+    this.anims.create({
+        // Son nom
+        key: 'left',
+        // Utilisation des quatres premières frame de dude
+        frames: this.anims.generateFrameNumbers('dude', { start: 0, end: 3 }),
+        // A une vitesse de 10 frames par seconde
+        frameRate: 10,
+        // -1 indique qu'il faut boucler l'animation
+        repeat: -1
+    });
+
+    this.anims.create({
+        key: 'turn',
+        frames: [ { key: 'dude', frame: 4 } ],
+        frameRate: 20
+    });
+
+    this.anims.create({
+        key: 'right',
+        frames: this.anims.generateFrameNumbers('dude', { start: 5, end: 8 }),
+        frameRate: 10,
+        repeat: -1
+    });
+
+    // Mise en place d'une détection du clavier et plus spécifiquement les flèches de direction
+    cursors = this.input.keyboard.createCursorKeys();
+    // Création d'un groupe physique dynamique pour les étoiles
+    stars = this.physics.add.group({
+      // Nom de la texture
+      key: 'star',
+      // Répété 11 fois
+      repeat: 11,
+      // Set de leurs positions
+      // Avec une avancée sur l'axe X de 70px par répétition
+      setXY: { x: 12, y: 0, stepX: 70 }
+    });
+
+    stars.children.iterate(function (child) {
+      // Ajout d'une valeur aléatoire de bounce (bounce est compris entre 0 et 1)
+      child.setBounceY(Phaser.Math.FloatBetween(0.4, 0.8));
+    });
+    // Création d'un objet collision entre le player(dude) et les plates formes
+    this.physics.add.collider(player, platforms);
+    // Et entre les étoiles et les plates formes
+    this.physics.add.collider(stars, platforms);
+    // Appel d'une fonction si dude entre en collision avec une étoile
+    this.physics.add.overlap(player, stars, collectStar, null, this);
+    // Mise en place du texte de scrore
+    // setScrollFactor(0): fixe par rapport à la camera
+    scoreText = this.add.text(16, 16, 'SCORE: 0', { fontSize: '15px', fill: '#000' }).setScrollFactor(0);
+    // Ajout d'une physique pour les bombes
+    bombs = this.physics.add.group();
+    // Ajout de collision entre les plates forme et les bombes
+    this.physics.add.collider(bombs, platforms);
+    // Ajout d'une collision entre dude et les bombes ainsi qu'un trigger de fonction
+    this.physics.add.collider(player, bombs, hitBomb, null, this);
+
+  }
+
+  function update ()
+  {
+    // Conditions servant à définir la flèche pressée
+    // Si flèche gauche :
+    if (cursors.left.isDown)
+    {
+      // On set la vélocité sur l'axe x à -160 (il partira à gauche)
+      player.setVelocityX(-360);
+      // Et on active l'animation gauche
+      player.anims.play('left', true);
+    }
+    // Sinon si c'est droite
+    else if (cursors.right.isDown)
+    {
+      // Idem
+        player.setVelocityX(360);
+        player.anims.play('right', true);
+    }
+    else
+    {
+      // Sinon on ne touche à rien, mise à zéro de la vitesse
+        player.setVelocityX(0);
+        // Et activation de l'animation pour qu'il fasse face
+        player.anims.play('turn');
+    }
+    // Si flèche du haut et qu'il est en contact avec quelque chose en bas
+    if (cursors.up.isDown && player.body.touching.down)
+    {
+        player.setVelocityY(-600);
+    }
+  }
+  // Fonction appelée quand le joueur entre en collision avec une étoile
+  function collectStar (player, star)
+  {
+      star.disableBody(true, true);
+      // MaJ des scores
+      score += 10;
+      // Et affichage du nouveau score
+      scoreText.setText('Score: '+score);
+      // Si toute les étoiles ont été récup
+      if (stars.countActive(true) === 0)
+      {
+        stars.children.iterate(function (child) {
+            child.enableBody(true, child.x, 0, true, true);
+        });
+        // Set d'une pos x du côté opposé du dude
+        var x = (player.x < 400) ? Phaser.Math.Between(400, 800) : Phaser.Math.Between(0, 400);
+        // Création d'une bombe et de ses propriétés
+        var bomb = bombs.create(x, 16, 'bomb');
+        bomb.setBounce(1);
+        bomb.setCollideWorldBounds(true);
+        bomb.setVelocity(Phaser.Math.Between(-200, 200), 20);
+      }
+  }
+  // Fonction utilisé lors de la collision entre dude et les bombes
+  function hitBomb (player, bomb)
+  {
+    // On met le jeu en pause
+    this.physics.pause();
+    // On met le dude en rouge
+    player.setTint(0xff0000);
+    player.anims.play('turn');
+    gameOver = true;
+  }
+</script>
+
+</body>
+</html>
